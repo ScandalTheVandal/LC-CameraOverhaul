@@ -40,35 +40,15 @@ internal static class CameraPatches
         CharacterController? controller = __instance.thisController;
         Transform? body = __instance.thisPlayerBody;
 
-        bool teleporting = __instance.teleportedLastFrame;
-
-        if (IsLookLocked(__instance) || teleporting
-            || !__instance.isPlayerControlled
-            || __instance.isPlayerDead
-            || cam == null || controller == null || body == null)
+        if (ShouldSkipCameraUpdate(__instance, cam, controller, body))
         {
-            if (_wasActive && cam != null) RestoreCamera(cam.transform);
-            _wasActive = false;
-            _hasLastBodyPos = false;
-            _hasVehicleSpeed = false;
-            VehicleTracker.Reset();
-            ShockTracker.BeingShocked = false;
+            DeactivateCameraState(cam);
             return;
         }
 
         bool justActivated = !_wasActive;
-        bool climbingChanged = _wasClimbing != __instance.isClimbingLadder;
-        bool vehicleChanged = _wasInVehicle != __instance.inVehicleAnimation;
-        bool specialInteractChanged = _wasInSpecialInteract != __instance.inSpecialInteractAnimation;
-        bool terminalChanged = _wasInTerminal != __instance.inTerminalMenu;
-
-        bool inControlledCamera = __instance.isClimbingLadder
-                               || __instance.inVehicleAnimation
-                               || __instance.inSpecialInteractAnimation
-                               || __instance.inTerminalMenu;
-
-        bool needsCameraRestore = justActivated || climbingChanged || vehicleChanged
-                               || specialInteractChanged || terminalChanged;
+        bool inControlledCamera = IsInControlledCamera(__instance);
+        bool needsCameraRestore = NeedsCameraRestore(justActivated, __instance);
 
         if (justActivated)
             _system.Reset();
@@ -83,11 +63,7 @@ internal static class CameraPatches
             _lastRollOffset = 0f;
         }
 
-        _wasActive = true;
-        _wasClimbing = __instance.isClimbingLadder;
-        _wasInVehicle = __instance.inVehicleAnimation;
-        _wasInSpecialInteract = __instance.inSpecialInteractAnimation;
-        _wasInTerminal = __instance.inTerminalMenu;
+        MarkCameraStateActive(__instance);
 
         Vector3 cur = camT.localEulerAngles;
 
@@ -160,6 +136,49 @@ internal static class CameraPatches
         VisorCompat.StickVisor(__instance.localVisor, __instance.localVisorTargetPoint, 1.0f);
     }
 
+    private static bool ShouldSkipCameraUpdate(PlayerControllerB player, Camera? cam, CharacterController? controller, Transform? body)
+        => IsLookLocked(player)
+           || player.teleportedLastFrame
+           || !player.isPlayerControlled
+           || player.isPlayerDead
+           || cam == null
+           || controller == null
+           || body == null;
+
+    private static void DeactivateCameraState(Camera? cam)
+    {
+        if (_wasActive && cam != null)
+            RestoreCamera(cam.transform);
+
+        _wasActive = false;
+        _hasLastBodyPos = false;
+        _hasVehicleSpeed = false;
+        VehicleTracker.Reset();
+        ShockTracker.BeingShocked = false;
+    }
+
+    private static bool IsInControlledCamera(PlayerControllerB player)
+        => player.isClimbingLadder
+           || player.inVehicleAnimation
+           || player.inSpecialInteractAnimation
+           || player.inTerminalMenu;
+
+    private static bool NeedsCameraRestore(bool justActivated, PlayerControllerB player)
+        => justActivated
+           || _wasClimbing != player.isClimbingLadder
+           || _wasInVehicle != player.inVehicleAnimation
+           || _wasInSpecialInteract != player.inSpecialInteractAnimation
+           || _wasInTerminal != player.inTerminalMenu;
+
+    private static void MarkCameraStateActive(PlayerControllerB player)
+    {
+        _wasActive = true;
+        _wasClimbing = player.isClimbingLadder;
+        _wasInVehicle = player.inVehicleAnimation;
+        _wasInSpecialInteract = player.inSpecialInteractAnimation;
+        _wasInTerminal = player.inTerminalMenu;
+    }
+
     private static Vector3 ReadVelocity(PlayerControllerB p, Transform body, CharacterController controller,
         bool inControlledCamera, float dt)
     {
@@ -211,7 +230,7 @@ internal static class CameraPatches
         if (so == null || so.drunknessSpeedEffect == null)
             return velocity;
 
-        float speedFactor = so.drunknessSpeedEffect.Evaluate(drunkness) / 5f + 1f;
+        float speedFactor = (so.drunknessSpeedEffect.Evaluate(drunkness) / 5f) + 1f;
         speedFactor = Mathf.Max(speedFactor, 0.25f);
         return velocity / speedFactor;
     }
@@ -228,7 +247,7 @@ internal static class CameraPatches
         float severity = Mathf.Clamp01((fall - 9f) / 16f);
 
         float weight = Mathf.Max(1f, __instance.carryWeight);
-        severity *= 1f + (weight - 1f) * (float)g.landingWeightInfluence;
+        severity *= 1f + ((weight - 1f) * (float)g.landingWeightInfluence);
 
         if (g.enableScreenShake && g.landingTrauma > 0.0)
             ScreenShakes.BumpTrauma((float)g.landingTrauma * severity);
